@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobil OCR Tarayıcı</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --primary: #007bff;
+            --success: #28a745;
+            --bg: #f0f2f5;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column; /* Mobilde alt alta */
+            background: white;
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 800px;
+            box-sizing: border-box;
+            gap: 20px;
+        }
+        @media (min-width: 768px) {
+            .container { flex-direction: row; } /* Masaüstünde yan yana */
+        }
+        
+        /* Sol Panel */
+        .left-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #drop-zone {
+            border: 2px dashed var(--primary);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            background: #f8fbff;
+            cursor: pointer;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        #preview-img {
+            width: 100%;
+            border-radius: 10px;
+            display: none;
+            border: 1px solid #ddd;
+        }
+        
+        /* Sağ Panel */
+        .right-panel {
+            flex: 1;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .person-card {
+            background: #fff;
+            border: 1px solid #eee;
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .input-row {
+            display: flex;
+            flex-direction: column; /* Mobilde input ve buton alt alta */
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        @media (min-width: 480px) {
+            .input-row { flex-direction: row; align-items: center; }
+        }
+        .input-row input {
+            flex: 1;
+            padding: 12px; /* Mobilde dokunma kolaylığı için daha geniş */
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .copy-btn {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            min-width: 100px;
+        }
+        #status {
+            text-align: center;
+            font-weight: bold;
+            color: var(--primary);
+            margin: 10px 0;
+        }
+        .hidden-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="left-panel">
+            <h3 style="margin:0">Görsel Kaynağı</h3>
+            <div id="drop-zone" onclick="document.getElementById('fileInput').click()">
+                <b>Dokun ve Fotoğraf Seç / Çek</b>
+                <small>(veya yapıştır / sürükle)</small>
+            </div>
+            <input type="file" id="fileInput" class="hidden-input" accept="image/*">
+            <img id="preview-img">
+            <div id="status">Hazır</div>
+        </div>
+
+        <div class="right-panel">
+            <h3 style="margin:0 0 10px 0">Sonuçlar</h3>
+            <div id="results-container">
+                <p style="color: #888;">Henüz bir tarama yapılmadı.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const previewImg = document.getElementById('preview-img');
+        const statusDiv = document.getElementById('status');
+        const resultsContainer = document.getElementById('results-container');
+
+        // Dosya seçme (Mobil Kamera/Galeri)
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) processFile(e.target.files[0]);
+        });
+
+        // Masaüstü için Yapıştır ve Sürükle
+        window.addEventListener('paste', e => e.clipboardData.files[0] && processFile(e.clipboardData.files[0]));
+        
+        function processFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImg.src = e.target.result;
+                previewImg.style.display = 'block';
+                document.getElementById('drop-zone').style.display = 'none';
+                runOCR(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function runOCR(img) {
+            statusDiv.innerText = "Okunuyor... ⏳";
+            resultsContainer.innerHTML = "";
+            try {
+                const { data: { text } } = await Tesseract.recognize(img, 'tur');
+                parseLines(text);
+                statusDiv.innerText = "Tamamlandı ✅";
+            } catch (e) {
+                statusDiv.innerText = "Hata oluştu!";
+            }
+        }
+
+        function parseLines(text) {
+            const lines = text.split('\n').filter(l => l.trim().length > 5);
+            const phoneRegex = /((?:0|\+90)?\s*(?:\(\d{3}\)|\d{3})\s*\d{3}\s*\d{2}\s*\d{2}|0?\d{9,10})/;
+            
+            let html = "";
+            lines.forEach((line, i) => {
+                const match = line.match(phoneRegex);
+                if (match) {
+                    let num = match[0];
+                    let rest = line.replace(num, "").trim();
+                    let parts = rest.split(" ");
+                    let isim = parts.length > 1 ? parts.slice(-2).join(" ") : rest;
+                    let unvan = parts.length > 2 ? parts.slice(0, -2).join(" ") : "Ünvan Belirsiz";
+
+                    html += `
+                    <div class="person-card">
+                        <div class="input-row">
+                            <input type="text" value="${unvan}" id="u${i}">
+                            <button class="copy-btn" onclick="copy('u${i}', this)">Ünvan</button>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" value="${isim}" id="i${i}">
+                            <button class="copy-btn" onclick="copy('i${i}', this)">İsim</button>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" value="${num}" id="n${i}">
+                            <button class="copy-btn" onclick="copy('n${i}', this)">No</button>
+                        </div>
+                    </div>`;
+                }
+            });
+            resultsContainer.innerHTML = html || "Kişi bulunamadı.";
+        }
+
+        function copy(id, btn) {
+            const el = document.getElementById(id);
+            el.select();
+            navigator.clipboard.writeText(el.value);
+            const old = btn.innerText;
+            btn.innerText = "Kopya!";
+            btn.style.background = "#17a2b8";
+            setTimeout(() => { btn.innerText = old; btn.style.background = ""; }, 1000);
+        }
+    </script>
+</body>
+</html>
